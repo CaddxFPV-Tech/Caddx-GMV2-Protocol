@@ -1,9 +1,9 @@
-# Copyright 2026 JerryLamMV
+# Copyright 2026 CaddxFPV
 # SPDX-License-Identifier: Apache-2.0
 
-"""以协议文档附录 2 的示例包为断言基准的单元测试。
+"""Unit tests asserted against the example packets in Appendix 2 of the protocol document.
 
-运行: python -m unittest test_gm_v2 -v
+Run: python -m unittest test_gm_v2 -v
 """
 
 import struct
@@ -51,17 +51,17 @@ class BuildUplinkFrameTests(unittest.TestCase):
 
     def test_invalid_axis_keeps_flag_cleared(self):
         frame = gm_v2.build_uplink_frame(axes=(gm_v2.AxisCommand(value_deg=None), None, None))
-        self.assertEqual(frame[6], 0x00)  # Roll 标志字节: valid=0
+        self.assertEqual(frame[6], 0x00)  # Roll flag byte: valid=0
 
     def test_go_zero_with_invalid_value(self):
         frame = gm_v2.build_uplink_frame(
             axes=(None, None, gm_v2.AxisCommand(value_deg=None, go_zero=True)))
-        self.assertTrue(frame[12] & 0x02)   # Yaw 标志字节: go_zero 置位
-        self.assertFalse(frame[12] & 0x01)  # 该轴控制值无效
+        self.assertTrue(frame[12] & 0x02)   # Yaw flag byte: go_zero set
+        self.assertFalse(frame[12] & 0x01)  # control value of this axis is invalid
 
     def test_go_zero_alongside_valid_value(self):
         frame = gm_v2.build_uplink_frame(axes=(None, None, gm_v2.AxisCommand(go_zero=True)))
-        self.assertEqual(frame[12] & 0x03, 0x03)  # go_zero 与 valid 同时置位
+        self.assertEqual(frame[12] & 0x03, 0x03)  # go_zero and valid both set
 
     def test_value_clamped_to_axis_range(self):
         self.assertEqual(gm_v2.deg_to_lsb(gm_v2.AXIS_PITCH, 120.0), 8900)
@@ -102,7 +102,7 @@ class ParseDownlinkFrameTests(unittest.TestCase):
 
     def test_hw_error_decoding(self):
         frame = bytearray(bytes.fromhex(DOC_EXAMPLE2_HEX))
-        frame[4] = 0x41  # 供电异常 | 电机堵转/过流
+        frame[4] = 0x41  # power supply fault | motor stall/overcurrent
         frame[26:28] = struct.pack(">H", gm_v2.crc16(bytes(frame[:26])))
         fb = gm_v2.parse_downlink_frame(bytes(frame))
         self.assertEqual(fb.hw_errors, ("供电异常", "电机堵转/过流"))
@@ -113,7 +113,7 @@ class DownlinkStreamParserTests(unittest.TestCase):
         frame = bytes.fromhex(DOC_EXAMPLE2_HEX)
         parser = gm_v2.DownlinkStreamParser()
         out = []
-        out += parser.feed(b"\x11\x22\x5A\x00")  # 假同步头
+        out += parser.feed(b"\x11\x22\x5A\x00")  # fake sync header
         out += parser.feed(frame[:9])
         out += parser.feed(frame[9:])
         self.assertEqual(len(out), 1)

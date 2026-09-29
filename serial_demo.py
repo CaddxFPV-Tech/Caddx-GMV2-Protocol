@@ -1,10 +1,10 @@
-# Copyright 2026 JerryLamMV
+# Copyright 2026 CaddxFPV
 # SPDX-License-Identifier: Apache-2.0
 
-"""串口收发示例：50 Hz 周期发送手动控制帧，并打印云台应答。
+"""Serial send/receive example: sends a manual control frame periodically at 50 Hz and prints gimbal feedback.
 
-依赖 pyserial: pip install pyserial
-用法: python serial_demo.py COM5        （Linux / macOS: /dev/ttyUSB0）
+Requires pyserial: pip install pyserial
+Usage: python serial_demo.py COM5        (Linux / macOS: /dev/ttyUSB0)
 """
 
 import sys
@@ -24,7 +24,7 @@ def main() -> None:
                        parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
                        timeout=0.02) as ser:
         parser = gm_v2.DownlinkStreamParser()
-        # 示例：yaw 跟随，roll / pitch 锁定，pitch -15°，yaw +20°
+        # Example: yaw follow, roll / pitch locked, pitch -15 deg, yaw +20 deg
         axes = (
             gm_v2.AxisCommand(gm_v2.WK_LOCK, 0.0),
             gm_v2.AxisCommand(gm_v2.WK_LOCK, -15.0),

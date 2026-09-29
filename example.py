@@ -1,11 +1,11 @@
-# Copyright 2026 JerryLamMV
+# Copyright 2026 CaddxFPV
 # SPDX-License-Identifier: Apache-2.0
 
-"""离线示例：不需要硬件。
+"""Offline example: no hardware required.
 
-示例数据取自协议文档附录 2：
-  示例 1 —— 上位机手动控制帧（yaw 跟随，灵敏度 50%，pitch -15°，yaw +20°）
-  示例 2 —— 云台应答帧（命令 4 执行成功，yaw 跟随，状态正常，固件 V2.2）
+The example data comes from Appendix 2 of the protocol document:
+  Example 1 — host manual control frame (yaw follow, sensitivity 50%, pitch -15 deg, yaw +20 deg)
+  Example 2 — gimbal acknowledgement frame (command 4 succeeded, yaw follow, state normal, firmware V2.2)
 """
 
 import gm_v2

@@ -1,16 +1,16 @@
-# Copyright 2026 JerryLamMV
+# Copyright 2026 CaddxFPV
 # SPDX-License-Identifier: Apache-2.0
 
-"""GM_v2 系列云台私有协议 V1.0 —— Python 参考实现。
+"""GM_v2 series gimbal private protocol V1.0 — Python reference implementation.
 
-协议速览（详见 docs/gm_v2_protocol_v1.0_cn.md）:
-- 上位机→云台: 18 字节定长帧, 同步头 A5 5A
-- 云台→上位机: 28 字节定长帧, 同步头 5A A5
-- CRC16: 多项式 0x1021, 初值 0, 不反射, 发送时高字节在前
-- 串口 460800 8N1 TTL, 控制帧建议 50 Hz 周期发送
-- V1.0 仅开放角度控制, 单位 0.01 度; 角速度控制为保留功能
+Protocol at a glance (see docs/gm_v2_protocol_v1.0.md for details):
+- Host → gimbal: 18-byte fixed-length frame, sync header A5 5A
+- Gimbal → host: 28-byte fixed-length frame, sync header 5A A5
+- CRC16: polynomial 0x1021, init 0, no reflection, high byte sent first
+- Serial 460800 8N1 TTL, control frames recommended at 50 Hz
+- V1.0 exposes angle control only, unit 0.01 deg; angular-rate control is reserved
 
-仅依赖 Python 标准库（3.8+）。
+Python standard library only (3.8+).
 """
 
 from __future__ import annotations
@@ -30,44 +30,45 @@ __all__ = [
     "build_uplink_frame", "parse_downlink_frame",
 ]
 
-# ---------------- 帧与协议常量 ----------------
+# ---------------- Frame & protocol constants ----------------
 
-SYNC_HOST_TO_GIMBAL = b"\xA5\x5A"   # 上位机 → 云台
-SYNC_GIMBAL_TO_HOST = b"\x5A\xA5"   # 云台 → 上位机
-PROTO_VERSION = 0x10                # 协议版本 V1.0
+SYNC_HOST_TO_GIMBAL = b"\xA5\x5A"   # host → gimbal
+SYNC_GIMBAL_TO_HOST = b"\x5A\xA5"   # gimbal → host
+PROTO_VERSION = 0x10                # protocol version V1.0
 
 FRAME_UP_LEN = 18
 FRAME_DOWN_LEN = 28
 
-# 上行命令码 (cmd.code, 协议注释 3)
+# Uplink command codes (cmd.code, protocol Note 3)
 CMD_NONE = 0
 CMD_GYRO_CALIBRATE = 1
 CMD_START = 2
 CMD_STOP = 3
 CMD_MANUAL = 4
 
-# 单轴工作模式 (协议注释 8)
-WK_LOCK = 0      # 锁定: 该轴不做机械跟随, 依靠陀螺增稳保持指向
-WK_FOLLOW = 1    # 跟随: 该轴随载机机械运动
+# Per-axis work mode (protocol Note 8)
+WK_LOCK = 0      # locked: no mechanical following, holds pointing by gyro stabilization
+WK_FOLLOW = 1    # follow: mechanically follows the vehicle
 
 AXIS_ROLL, AXIS_PITCH, AXIS_YAW = 0, 1, 2
 AXIS_NAMES = ("Roll", "Pitch", "Yaw")
 
-# 角度控制量程, 单位 0.01 度 (协议注释 10)
+# Angle control ranges, unit 0.01 deg (protocol Note 10)
 ANGLE_LIMIT_LSB = {
     AXIS_ROLL: (-6000, 6000),
     AXIS_PITCH: (-8900, 8900),
     AXIS_YAW: (-16000, 16000),
 }
 
-# V1.0 支持的三轴模式组合 (roll, pitch, yaw), 其它组合返回 cmd.stat = 2 (协议注释 8)
+# Three-axis mode combinations supported by V1.0 (roll, pitch, yaw);
+# other combinations return cmd.stat = 2 (protocol Note 8)
 SUPPORTED_MODE_COMBOS = frozenset({
-    (WK_LOCK, WK_LOCK, WK_FOLLOW),      # yaw 跟随
-    (WK_FOLLOW, WK_LOCK, WK_FOLLOW),    # roll + yaw 跟随
-    (WK_FOLLOW, WK_FOLLOW, WK_FOLLOW),  # 三轴跟随
+    (WK_LOCK, WK_LOCK, WK_FOLLOW),      # yaw follow
+    (WK_FOLLOW, WK_LOCK, WK_FOLLOW),    # roll + yaw follow
+    (WK_FOLLOW, WK_FOLLOW, WK_FOLLOW),  # three-axis follow
 })
 
-# 硬件故障位图 (下行帧 hw_err, 协议注释 17)
+# Hardware fault bitmap (downlink frame hw_err, protocol Note 17)
 HW_ERROR_FLAGS = (
     (0x01, "供电异常"),
     (0x02, "IMU 通讯异常"),
@@ -79,15 +80,15 @@ HW_ERROR_FLAGS = (
     (0x80, "限角保护触发"),
 )
 
-RUN_STATES = {0: "初始化中", 1: "正常", 2: "已停止", 3: "保护中"}               # 协议注释 18
-GIMBAL_MODES = {0: "已停止", 1: "yaw 跟随", 2: "roll+yaw 跟随", 3: "三轴跟随"}  # 协议注释 22
-CMD_RESULTS = {0: "未定义", 1: "成功", 2: "失败"}                              # 协议注释 21
+RUN_STATES = {0: "初始化中", 1: "正常", 2: "已停止", 3: "保护中"}               # protocol Note 18
+GIMBAL_MODES = {0: "已停止", 1: "yaw 跟随", 2: "roll+yaw 跟随", 3: "三轴跟随"}  # protocol Note 22
+CMD_RESULTS = {0: "未定义", 1: "成功", 2: "失败"}                              # protocol Note 21
 
 
-# ---------------- CRC 与单位换算 ----------------
+# ---------------- CRC & unit conversion ----------------
 
 def crc16(data: bytes) -> int:
-    """CRC16: 多项式 0x1021, 初值 0, 不反射; 与协议文档的 C 函数逐位一致。"""
+    """CRC16: polynomial 0x1021, init 0, no reflection; bit-identical to the C function in the protocol document."""
     crc = 0
     for byte in data:
         crc ^= byte << 8
@@ -97,31 +98,33 @@ def crc16(data: bytes) -> int:
 
 
 def deg_to_lsb(axis: int, deg: float) -> int:
-    """角度(度) → 0.01 度 LSB, 超出该轴量程时按量程限幅（协议注释 10）。"""
+    """Angle (deg) → 0.01 deg LSB, clamped to the range of the axis (protocol Note 10)."""
     lo, hi = ANGLE_LIMIT_LSB[axis]
     return max(lo, min(hi, int(round(deg * 100))))
 
 
 def lsb_to_deg(lsb: int) -> float:
-    """0.01 度 LSB → 角度(度)。"""
+    """0.01 deg LSB → angle (deg)."""
     return lsb * 0.01
 
 
 def is_mode_combo_supported(wk_roll: int, wk_pitch: int, wk_yaw: int) -> bool:
-    """三轴模式组合是否为 V1.0 支持的组合（协议注释 8）。"""
+    """Whether the three-axis mode combination is supported by V1.0 (protocol Note 8)."""
     return (wk_roll, wk_pitch, wk_yaw) in SUPPORTED_MODE_COMBOS
 
 
-# ---------------- 上行帧组包 ----------------
+# ---------------- Uplink frame building ----------------
 
 @dataclass
 class AxisCommand:
-    """单轴控制命令。
+    """Per-axis control command.
 
     wk_mode   : WK_LOCK / WK_FOLLOW
-    value_deg : 期望的相机姿态增量, 单位度; None 表示本轴控制值无效,
-                云台沿用该轴上一次的控制值
-    go_zero   : 回中触发, 任一轴置位都会触发同一动作
+    value_deg : desired camera attitude increment, in deg; None marks this
+                axis's control value invalid, so the gimbal keeps the previous
+                control value of this axis
+    go_zero   : go-to-center trigger; setting it on any axis triggers the
+                same action
     """
 
     wk_mode: int = WK_LOCK
@@ -131,25 +134,28 @@ class AxisCommand:
 
 def build_uplink_frame(cmd_code: int = CMD_MANUAL, trig: int = 0, sens: int = 0,
                        axes=None) -> bytes:
-    """构造 18 字节上行帧。
+    """Build an 18-byte uplink frame.
 
-    cmd_code : 命令码 (CMD_*); 陀螺校准要求温控就绪且设备静止（协议注释 3）
-    trig     : 命令触发计数, 同命令码重复发送时必须改变
-    sens     : 灵敏度 [0, 100]
-    axes     : 长度 3 的序列 (Roll/Pitch/Yaw), 元素为 AxisCommand 或 None（无效轴）
+    cmd_code : command code (CMD_*); gyro calibration requires the temperature
+               control to be ready and the device stationary (protocol Note 3)
+    trig     : command trigger counter; must change when the same command code
+               is repeated
+    sens     : sensitivity [0, 100]
+    axes     : sequence of length 3 (Roll/Pitch/Yaw), items are AxisCommand
+               or None (invalid axis)
     """
     if axes is None:
         axes = (AxisCommand(), AxisCommand(), AxisCommand())
     axes = tuple(AxisCommand() if a is None else a for a in axes)
     if len(axes) != 3:
-        raise ValueError("axes 必须为长度 3 的序列 (Roll/Pitch/Yaw)")
+        raise ValueError("axes must be a sequence of length 3 (Roll/Pitch/Yaw)")
 
     body = bytearray()
     body += SYNC_HOST_TO_GIMBAL
     body.append(PROTO_VERSION)
     body.append(((cmd_code & 0x1F) << 3) | (trig & 0x07))
     body.append(sens & 0xFF)
-    body.append(0x00)  # reserved0: 本版本变焦档不开放, 必须填 0
+    body.append(0x00)  # reserved0: zoom steps are not exposed in this version, must be 0
     for i, axis in enumerate(axes):
         valid = axis.value_deg is not None
         value = deg_to_lsb(i, axis.value_deg) if valid else 0
@@ -158,36 +164,36 @@ def build_uplink_frame(cmd_code: int = CMD_MANUAL, trig: int = 0, sens: int = 0,
             | ((axis.wk_mode & 0x03) << 2)
         body += struct.pack("<Bh", flags, value)
     body.append(0x00)  # reserved
-    body += struct.pack(">H", crc16(body))  # CRC 发送时高字节在前
+    body += struct.pack(">H", crc16(body))  # CRC high byte first
     return bytes(body)
 
 
-# ---------------- 下行帧解析 ----------------
+# ---------------- Downlink frame parsing ----------------
 
 @dataclass
 class GimbalFeedback:
-    """云台应答帧 (28 字节) 解析结果。"""
+    """Parsed result of a gimbal feedback frame (28 bytes)."""
 
     protocol_version: int
-    fw_version: str             # 如 "2.2"
-    hw_error_bits: int          # 原始故障位图
-    hw_errors: tuple            # 解码后的故障描述元组
-    run_state: int              # 0 初始化中 / 1 正常 / 2 已停止 / 3 保护中
+    fw_version: str             # e.g. "2.2"
+    hw_error_bits: int          # raw hardware fault bitmap
+    hw_errors: tuple            # decoded fault descriptions
+    run_state: int              # 0 initializing / 1 normal / 2 stopped / 3 protected
     run_state_text: str
-    mounted_upside_down: bool   # False 正装 / True 倒装
-    temp_control_ready: bool    # 温控就绪标志
-    cmd_code: int               # 命令码回显
-    cmd_stat: int               # 0 未定义 / 1 成功 / 2 失败
+    mounted_upside_down: bool   # False upright / True inverted
+    temp_control_ready: bool    # temperature-control ready flag
+    cmd_code: int               # command code echo
+    cmd_stat: int               # 0 undefined / 1 success / 2 failure
     cmd_stat_text: str
-    mode: int                   # 当前工作模式
+    mode: int                   # current work mode
     mode_text: str
-    cam_angle_deg: tuple        # 相机姿态角 (roll, pitch, yaw), 度
-    motor_angle_deg: tuple      # 相机框架角 (roll, pitch, yaw), 度
-    cam_rate_dps: tuple         # 相机角速度 (roll, pitch, yaw), 度/秒
+    cam_angle_deg: tuple        # camera attitude (roll, pitch, yaw), deg
+    motor_angle_deg: tuple      # camera frame angles (roll, pitch, yaw), deg
+    cam_rate_dps: tuple         # camera angular rates (roll, pitch, yaw), deg/s
 
 
 def parse_downlink_frame(frame: bytes) -> GimbalFeedback | None:
-    """解析 28 字节下行帧; 长度 / 同步头 / CRC 不合法时返回 None。"""
+    """Parse a 28-byte downlink frame; return None when length / sync header / CRC is invalid."""
     if len(frame) != FRAME_DOWN_LEN or frame[:2] != SYNC_GIMBAL_TO_HOST:
         return None
     (crc_rx,) = struct.unpack(">H", frame[26:28])
@@ -219,10 +225,11 @@ def parse_downlink_frame(frame: bytes) -> GimbalFeedback | None:
 
 
 class DownlinkStreamParser:
-    """串口字节流解析器: 把串口收到的字节逐段喂入 feed(), 返回校验通过的应答帧。
+    """Serial byte-stream parser: feed received bytes into feed() and get back CRC-validated feedback frames.
 
-    内部按 5A A5 同步头做定长截取, 以 CRC 校验确认完整帧, 截取逻辑与协议文档
-    附录 3 的接收状态机一致。
+    Internally it slices fixed-length frames at 5A A5 sync headers and confirms
+    complete frames by CRC, matching the receive state machine in Appendix 3 of
+    the protocol document.
     """
 
     def __init__(self) -> None:
