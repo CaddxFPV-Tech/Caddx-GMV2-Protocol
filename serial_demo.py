@@ -17,7 +17,7 @@ import gm_v2
 
 def main() -> None:
     if len(sys.argv) != 2:
-        sys.exit(f"用法: python {sys.argv[0]} <串口名，如 COM5 或 /dev/ttyUSB0>")
+        sys.exit(f"usage: python {sys.argv[0]} <port, e.g. COM5 or /dev/ttyUSB0>")
     port = sys.argv[1]
 
     with serial.Serial(port, 460800, bytesize=serial.EIGHTBITS,
@@ -34,7 +34,7 @@ def main() -> None:
 
         period = 1.0 / 50.0
         next_tx = time.perf_counter()
-        print(f"已打开 {port}，按 Ctrl+C 退出")
+        print(f"opened {port}, press Ctrl+C to exit")
         while True:
             now = time.perf_counter()
             if now >= next_tx:

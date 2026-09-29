@@ -84,18 +84,18 @@ class ParseDownlinkFrameTests(unittest.TestCase):
         self.assertEqual(self.fb.fw_version, "2.2")
         self.assertEqual(self.fb.hw_error_bits, 0x00)
         self.assertEqual(self.fb.run_state, 1)
-        self.assertEqual(self.fb.run_state_text, "正常")
+        self.assertEqual(self.fb.run_state_text, "normal")
         self.assertFalse(self.fb.mounted_upside_down)
         self.assertTrue(self.fb.temp_control_ready)
 
     def test_command_echo(self):
         self.assertEqual(self.fb.cmd_code, 4)
         self.assertEqual(self.fb.cmd_stat, 1)
-        self.assertEqual(self.fb.cmd_stat_text, "成功")
+        self.assertEqual(self.fb.cmd_stat_text, "success")
 
     def test_mode_and_angles(self):
         self.assertEqual(self.fb.mode, 1)
-        self.assertEqual(self.fb.mode_text, "yaw 跟随")
+        self.assertEqual(self.fb.mode_text, "yaw follow")
         self.assertEqual(tuple(round(v, 6) for v in self.fb.cam_angle_deg), (0.35, -12.4, 5.2))
         self.assertEqual(tuple(round(v, 6) for v in self.fb.motor_angle_deg), (0.35, -12.1, 5.05))
         self.assertEqual(tuple(round(v, 6) for v in self.fb.cam_rate_dps), (0.1, -0.3, 0.2))
@@ -105,7 +105,7 @@ class ParseDownlinkFrameTests(unittest.TestCase):
         frame[4] = 0x41  # power supply fault | motor stall/overcurrent
         frame[26:28] = struct.pack(">H", gm_v2.crc16(bytes(frame[:26])))
         fb = gm_v2.parse_downlink_frame(bytes(frame))
-        self.assertEqual(fb.hw_errors, ("供电异常", "电机堵转/过流"))
+        self.assertEqual(fb.hw_errors, ("power supply fault", "motor stall/overcurrent"))
 
 
 class DownlinkStreamParserTests(unittest.TestCase):

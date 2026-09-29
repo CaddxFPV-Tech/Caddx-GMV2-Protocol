@@ -70,19 +70,19 @@ SUPPORTED_MODE_COMBOS = frozenset({
 
 # Hardware fault bitmap (downlink frame hw_err, protocol Note 17)
 HW_ERROR_FLAGS = (
-    (0x01, "供电异常"),
-    (0x02, "IMU 通讯异常"),
-    (0x04, "IMU 数据异常"),
-    (0x08, "位置传感器异常"),
-    (0x10, "输入信号异常"),
-    (0x20, "参数存储异常"),
-    (0x40, "电机堵转/过流"),
-    (0x80, "限角保护触发"),
+    (0x01, "power supply fault"),
+    (0x02, "IMU communication fault"),
+    (0x04, "IMU data fault"),
+    (0x08, "position sensor fault"),
+    (0x10, "input signal fault"),
+    (0x20, "parameter storage fault"),
+    (0x40, "motor stall/overcurrent"),
+    (0x80, "angle-limit protection triggered"),
 )
 
-RUN_STATES = {0: "初始化中", 1: "正常", 2: "已停止", 3: "保护中"}               # protocol Note 18
-GIMBAL_MODES = {0: "已停止", 1: "yaw 跟随", 2: "roll+yaw 跟随", 3: "三轴跟随"}  # protocol Note 22
-CMD_RESULTS = {0: "未定义", 1: "成功", 2: "失败"}                              # protocol Note 21
+RUN_STATES = {0: "initializing", 1: "normal", 2: "stopped", 3: "protected"}  # protocol Note 18
+GIMBAL_MODES = {0: "stopped", 1: "yaw follow", 2: "roll+yaw follow", 3: "three-axis follow"}  # protocol Note 22
+CMD_RESULTS = {0: "undefined", 1: "success", 2: "failure"}  # protocol Note 21
 
 
 # ---------------- CRC & unit conversion ----------------
@@ -210,14 +210,14 @@ def parse_downlink_frame(frame: bytes) -> GimbalFeedback | None:
         hw_error_bits=hw_err,
         hw_errors=tuple(text for bit, text in HW_ERROR_FLAGS if hw_err & bit),
         run_state=status & 0x03,
-        run_state_text=RUN_STATES.get(status & 0x03, "未知"),
+        run_state_text=RUN_STATES.get(status & 0x03, "unknown"),
         mounted_upside_down=bool(status & 0x04),
         temp_control_ready=bool(status & 0x08),
         cmd_code=(cmd >> 3) & 0x1F,
         cmd_stat=cmd & 0x07,
-        cmd_stat_text=CMD_RESULTS.get(cmd & 0x07, "未知"),
+        cmd_stat_text=CMD_RESULTS.get(cmd & 0x07, "unknown"),
         mode=frame[7],
-        mode_text=GIMBAL_MODES.get(frame[7], "未知"),
+        mode_text=GIMBAL_MODES.get(frame[7], "unknown"),
         cam_angle_deg=tuple(lsb_to_deg(v) for v in struct.unpack("<3h", frame[8:14])),
         motor_angle_deg=tuple(lsb_to_deg(v) for v in struct.unpack("<3h", frame[14:20])),
         cam_rate_dps=tuple(v * 0.1 for v in struct.unpack("<3h", frame[20:26])),
