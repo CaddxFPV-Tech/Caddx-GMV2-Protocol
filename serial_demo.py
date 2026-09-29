@@ -20,7 +20,7 @@ def main() -> None:
         sys.exit(f"用法: python {sys.argv[0]} <串口名，如 COM5 或 /dev/ttyUSB0>")
     port = sys.argv[1]
 
-    with serial.Serial(port, 115200, bytesize=serial.EIGHTBITS,
+    with serial.Serial(port, 460800, bytesize=serial.EIGHTBITS,
                        parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
                        timeout=0.02) as ser:
         parser = gm_v2.DownlinkStreamParser()
